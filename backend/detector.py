@@ -48,18 +48,57 @@ class DeepfakeDetector:
         else:
             self.model = None
             print("⚠️ No ML model found. Using manual weights fallback.")
-
+        self.reader = easyocr.Reader(['en', 'hi'], gpu=False)
+        self.spell = SpellChecker()
+        
+        if os.path.exists(model_path):
+            self.model = joblib.load(model_path)
+            print("✅ Scaled ML Model loaded!")
+        else:
+            self.model = None
     # --- FEATURE EXTRACTION FUNCTIONS ---
 
+    # def check_frequency_artifacts(self, img):
+    #     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    #     f = np.fft.fft2(gray)
+    #     fshift = np.fft.fftshift(f)
+    #     magnitude = 20 * np.log(np.abs(fshift) + 1)
+    #     high_freq_power = np.sum(magnitude[magnitude > np.percentile(magnitude, 95)])
+    #     score = min(100, high_freq_power / (np.mean(magnitude) * 40))
+    #     return round(score, 1)
     def check_frequency_artifacts(self, img):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         f = np.fft.fft2(gray)
         fshift = np.fft.fftshift(f)
         magnitude = 20 * np.log(np.abs(fshift) + 1)
         high_freq_power = np.sum(magnitude[magnitude > np.percentile(magnitude, 95)])
-        score = min(100, high_freq_power / (np.mean(magnitude) * 40))
+        
+        # ADJUSTED: Higher divisor (60 instead of 40) to be less sensitive to grain
+        score = min(100, high_freq_power / (np.mean(magnitude) * 60))
         return round(score, 1)
-
+    def check_text_errors(self, img):
+        """Hindi and English aware OCR."""
+        results = self.reader.readtext(img, detail=1)
+        if not results: return 15.0
+        
+        words = []
+        for res in results:
+            text = res[1]
+            # Filter out non-alphanumeric noise that OCR sometimes picks up
+            if len(text.strip()) > 1:
+                words.append(text)
+        
+        if not words: return 15.0
+        # Check English words; Hindi words will naturally pass 'spell' as 'known' 
+        # if you add a Hindi dictionary, or we just ignore high error rates for Hindi script
+        misspelled = self.spell.unknown(words)
+        
+        # If it's Devnagari (Hindi), it shouldn't be penalized as "misspelled English"
+        real_errors = [w for w in misspelled if not any('\u0900' <= c <= '\u097F' for c in w)]
+        
+        error_rate = len(real_errors) / len(words) * 100
+        return round(min(95, error_rate * 2 + 15), 1)
+    
     def check_texture_noise(self, img):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         laplacian = cv2.Laplacian(gray, cv2.CV_64F)
@@ -148,17 +187,23 @@ class DeepfakeDetector:
         skin_var = cv2.Laplacian(gray, cv2.CV_64F).var()
         return 40.0 if skin_var < 800 else 15.0
 
+    def _preprocess_image(self, img):
+        """Reduces camera grain (noise) before feature extraction."""
+        return cv2.fastNlMeansDenoisingColored(img, None, 10, 10, 7, 21)
+    
     def extract_all_features(self, img_cv):
-        """Used for both training (CSV) and prediction."""
+        # We clean the image first to remove your camera noise
+        clean_img = self._preprocess_image(img_cv)
+        
         return {
-            "freq_artifacts": self.check_frequency_artifacts(img_cv),
-            "texture_noise": self.check_texture_noise(img_cv),
-            "lighting_shadows": self.check_lighting_shadows(img_cv),
+            "freq_artifacts": self.check_frequency_artifacts(clean_img),
+            "texture_noise": self.check_texture_noise(clean_img),
+            "lighting_shadows": self.check_lighting_shadows(img_cv), # Original for lighting
             "facial_landmarks": self.check_facial_landmarks(img_cv),
             "hand_fingers": self.check_hands_fingers(img_cv),
             "text_errors": self.check_text_errors(img_cv),
-            "morphological": self.check_morphological_view(img_cv),
-            "extra_props": self.check_extra_properties(img_cv)
+            "morphological": self.check_morphological_view(clean_img),
+            "extra_props": self.check_extra_properties(clean_img)
         }
 
     def predict_from_array(self, img_cv):
