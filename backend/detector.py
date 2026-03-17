@@ -9,6 +9,7 @@ import joblib
 import pandas as pd
 import os
 
+
 class DeepfakeDetector:
     def __init__(self, model_path='deepfake_brain.pkl'):
         # 1. Initialize Face Landmarker
