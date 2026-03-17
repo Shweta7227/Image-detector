@@ -13,3 +13,4 @@ torchaudio
 scikit-learn
 pandas
 joblib
+imbalanced-learn

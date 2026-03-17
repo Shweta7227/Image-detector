@@ -1,21 +1,5 @@
 [
-    {
-        "image_name": "11.jpg",
-        "actual_label": "Real",
-        "predicted_label": "Deepfake",
-        "error_type": "False Positive",
-        "scores": {
-            "freq_artifacts": 100,
-            "texture_noise": 100,
-            "lighting_shadows": 0,
-            "facial_landmarks": 60,
-            "hand_fingers": 15,
-            "text_errors": 15,
-            "morphological": 11,
-            "extra_props": 40
-        },
-        "notes": "User confirmed this is a real photo. High noise and frequency scores are likely due to camera sensor quality or low lighting, not AI generation."
-    },
+    
     {
         "image_name": "11.jpg",
         "actual_label": "Real",
